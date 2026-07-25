@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="文化产品价值失范作品综合预警平台前端原型">
+  <title>文化产品价值失范作品综合预警平台</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <div class="app-shell">
+    <header class="topbar">
+      <button class="icon-button mobile-menu-button" type="button" data-action="toggle-menu" aria-label="打开导航菜单">
+        <span data-icon="menu"></span>
+      </button>
+      <a class="brand-mark" href="#/overview" aria-label="返回系统总览">
+        <span class="brand-shield"><span data-icon="lock-keyhole"></span></span>
+      </a>
+      <div class="clock-block" aria-label="当前日期时间">
+        <strong id="current-time">10:28:36</strong>
+        <span id="current-date">2025-06-02</span>
+        <span id="current-week">星期一</span>
+      </div>
+      <div class="system-title">
+        <span>文化产品价值失范作品综合预警平台</span>
+      </div>
+      <div class="topbar-actions">
+        <div class="status-chip"><span data-icon="shield-check"></span><span>系统运行正常</span></div>
+        <button class="admin-button" type="button" data-action="admin-menu">
+          <span data-icon="user-round"></span><span>管理员</span><span data-icon="chevron-down"></span>
+        </button>
+      </div>
+    </header>
+
+    <aside class="sidebar" id="sidebar" aria-label="主导航">
+      <nav class="main-nav">
+        <a class="nav-item" href="#/overview" data-nav="overview"><span data-icon="house"></span><span>总览</span></a>
+        <a class="nav-item" href="#/alerts" data-nav="alerts"><span data-icon="bell"></span><span>实时预警</span><b class="nav-badge">12</b></a>
+        <button class="nav-item" type="button" data-nav="analysis" data-action="nav-placeholder" data-label="研判中心"><span data-icon="monitor-check"></span><span>研判中心</span></button>
+        <button class="nav-item" type="button" data-action="nav-placeholder" data-label="重点账号"><span data-icon="users-round"></span><span>重点账号</span></button>
+        <button class="nav-item" type="button" data-action="nav-placeholder" data-label="审批记录"><span data-icon="clipboard-clock"></span><span>审批记录</span></button>
+        <button class="nav-item" type="button" data-action="nav-placeholder" data-label="系统设置"><span data-icon="settings"></span><span>系统设置</span></button>
+      </nav>
+      <button class="collapse-button" type="button" data-action="collapse-menu"><span data-icon="panel-left-close"></span><span>收起菜单</span></button>
+    </aside>
+
+    <button class="sidebar-backdrop" type="button" data-action="toggle-menu" aria-label="关闭导航菜单"></button>
+    <main class="main-content" id="main-content" tabindex="-1"></main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script defer src="icons.js"></script>
+  <script defer src="data.js"></script>
+  <script defer src="app.js"></script>
+</body>
+</html>

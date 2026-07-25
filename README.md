@@ -1,2 +1,17 @@
-# Cultural-Products-Web
-Cultural Products Web
+# 文化产品价值失范综合预警平台
+
+这是一个纯前端、无后端依赖的可点击原型。数据、案例缩略图和地图素材均在本地，页面通过 Hash 路由切换：
+
+- `#/overview`：系统总览
+- `#/alerts`：实时预警、关键词、筛选、分页
+- `#/detail/AL250602-009845`：预警详情、AI 分析与人工研判
+
+直接双击 `index.html` 即可打开；若浏览器限制本地脚本，可在当前目录运行：
+
+```powershell
+python -m http.server 4173 --bind 127.0.0.1
+```
+
+然后访问 `http://127.0.0.1:4173/index.html#/overview`。
+
+研判草稿会保存在浏览器 `localStorage` 中，导出报告会生成本地文本文件。当前地图和案例图片用于内部原型演示，正式对外部署前应替换为已获授权的素材和合规标准地图。
