@@ -60,7 +60,7 @@ const sandbox = {
   document: documentStub,
   location: locationStub,
   navigator: {},
-  localStorage: { getItem() { return null; }, setItem() {} },
+  localStorage: { getItem() { return 'null'; }, setItem() {} },
   URL,
   URLSearchParams,
   FormData,
@@ -159,15 +159,51 @@ assert.equal(warningTypeTotal, data.totalAlerts, '预警类型统计总数与预
 assert.equal(statusTotal, data.totalAlerts, '处置状态统计总数与预警总数不一致');
 
 const alertById = new Map(Array.from(data.alerts, (alert) => [alert.id, alert]));
+assert.equal(alertById.size, data.alerts.length, '预警列表存在重复 ID');
+Array.from(data.alerts).forEach((alert) => {
+  assert.ok(data.statusCounts[alert.status] != null, `${alert.id} 使用了未知处置状态`);
+  assert.equal(alert.spread.length, alert.spreadGrowth.length, `${alert.id} 的传播数据与增幅数量不一致`);
+  alert.spreadGrowth.forEach((growth) => {
+    assert.ok(Number.isFinite(Number(growth)), `${alert.id} 包含无效传播增幅`);
+  });
+});
 const sortedAlertIds = Array.from(data.alerts)
+  .filter((alert) => alert.level === '高危')
   .sort((left, right) => right.time.localeCompare(left.time))
   .slice(0, data.latestWarnings.length)
   .map((alert) => alert.id);
 const latestIds = Array.from(data.latestWarnings, (alert) => alert.id);
 assert.ok(latestIds.length > 0, '最新高危预警不能为空');
 assert.equal(new Set(latestIds).size, latestIds.length, '最新高危预警存在重复 ID');
-latestIds.forEach((id) => assert.ok(alertById.has(id), `最新高危预警 ${id} 不存在于预警列表`));
+latestIds.forEach((id) => {
+  assert.ok(alertById.has(id), `最新高危预警 ${id} 不存在于预警列表`);
+  assert.equal(alertById.get(id).level, '高危', `最新高危预警 ${id} 的风险等级不正确`);
+});
 assert.deepEqual(latestIds, sortedAlertIds, '最新高危预警 ID 未与列表按发布时间对齐');
+
+assert.equal(data.totals.pending, data.statusCounts['待处置'], '总览待处置口径与状态统计不一致');
+assert.equal(data.totals.newAlerts, data.alertSummary.newlyDiscovered.value, '总览新增口径与 24 小时新发现不一致');
+assert.equal(data.totals.handled, data.statusCounts['已处置'], '总览已处置口径与状态统计不一致');
+assert.equal(data.totals.manualReview, data.statusCounts['待人工审核'], '总览人工审核口径与状态统计不一致');
+assert.equal(data.alertSummary.completedToday.value, data.statusCounts['已通过'], '复核通过口径与状态统计不一致');
+
+assert.deepEqual(Object.keys(data.caseDetails).sort(), Array.from(alertById.keys()).sort(), '案例详情必须与列表 ID 一一对应');
+Object.entries(data.caseDetails).forEach(([id, detail]) => {
+  const alert = alertById.get(id);
+  assert.ok(detail.introduction, `${id} 缺少案例简介`);
+  assert.ok(detail.originalText, `${id} 缺少原始文案`);
+  assert.ok(detail.conclusion, `${id} 缺少失范结论`);
+  assert.ok(detail.logic, `${id} 缺少逻辑摘要`);
+  assert.ok(Array.isArray(detail.evidence) && detail.evidence.length > 0, `${id} 缺少关键证据`);
+  assert.ok(Array.isArray(detail.relatedIds), `${id} 缺少相似案例 ID`);
+  assert.equal(new Set(detail.relatedIds).size, detail.relatedIds.length, `${id} 包含重复的相似案例 ID`);
+  assert.equal(detail.recommendation.action, alert.suggestion, `${id} 的详情处置建议与列表不一致`);
+  assert.ok(detail.rules.some((rule) => rule.startsWith(alert.categoryCode + ' ')), `${id} 的详情规则未对应列表失范类别`);
+  detail.relatedIds.forEach((relatedId) => {
+    assert.ok(alertById.has(relatedId), `${id} 的相似案例 ${relatedId} 不存在于列表`);
+    assert.notEqual(relatedId, id, `${id} 不能把自身列为相似案例`);
+  });
+});
 
 const leadAlert = alertById.get(data.detail.id);
 assert.ok(leadAlert, '详情主预警未对应到预警列表');
@@ -197,6 +233,32 @@ checks.forEach(([hash, expected]) => {
   assert.ok(html.length >= 1000, `${hash} 渲染内容异常短`);
 });
 
+Array.from(data.alerts).forEach((alert) => {
+  const html = renderHash('#/detail/' + encodeURIComponent(alert.id));
+  const profile = data.caseDetails[alert.id];
+  [
+    alert.id,
+    alert.title,
+    alert.categoryLabel,
+    alert.platform,
+    alert.time,
+    alert.accountId,
+    alert.image,
+    profile.introduction,
+    profile.conclusion,
+    profile.logic,
+    profile.recommendation.note
+  ].forEach((text) => assert.ok(html.includes(text), `${alert.id} 详情缺少对应内容：${text}`));
+  profile.originalText.split('\n').filter(Boolean).forEach((text) => {
+    assert.ok(html.includes(text), `${alert.id} 详情缺少原始文案：${text}`);
+  });
+  assert.deepEqual(
+    spreadGrowthFromDetail(html),
+    Array.from(alert.spreadGrowth, Number),
+    `${alert.id} 详情传播增幅未使用列表固定数据`
+  );
+});
+
 const dateStart = '2025-06-01';
 const dateEnd = '2025-06-01';
 const dateFilteredHtml = renderHash('#/alerts?startDate=' + dateStart + '&endDate=' + dateEnd + '&page=1');
@@ -205,6 +267,24 @@ const expectedDateIds = Array.from(data.alerts)
   .sort((left, right) => right.time.localeCompare(left.time))
   .map((alert) => alert.id);
 assert.deepEqual(detailIdsFromAlerts(dateFilteredHtml), expectedDateIds, '开始/结束日期筛选未仅显示日期范围内的预警');
+
+const startOnlyHtml = renderHash('#/alerts?startDate=2025-06-01&endDate=&page=1');
+const expectedStartOnlyIds = Array.from(data.alerts)
+  .filter((alert) => alert.time.slice(0, 10) >= '2025-06-01')
+  .sort((left, right) => right.time.localeCompare(left.time))
+  .map((alert) => alert.id);
+assert.deepEqual(detailIdsFromAlerts(startOnlyHtml), expectedStartOnlyIds, '仅开始日期筛选无效');
+
+const endOnlyHtml = renderHash('#/alerts?startDate=&endDate=2025-05-28&page=1');
+const expectedEndOnlyIds = Array.from(data.alerts)
+  .filter((alert) => alert.time.slice(0, 10) <= '2025-05-28')
+  .sort((left, right) => right.time.localeCompare(left.time))
+  .map((alert) => alert.id);
+assert.deepEqual(detailIdsFromAlerts(endOnlyHtml), expectedEndOnlyIds, '仅结束日期筛选无效');
+
+const invalidFiltersHtml = renderHash('#/alerts?startDate=2025-02-31&platform=unknown&risk=unknown&status=unknown&page=1');
+assert.ok(invalidFiltersHtml.includes('value="2025-05-01"'), '非法日期未回退到默认日期');
+assert.ok(!invalidFiltersHtml.includes('NaN'), '非法筛选参数导致页面出现 NaN');
 
 ['not-a-number', '0', '-3'].forEach((invalidPage) => {
   const html = renderHash('#/alerts?page=' + encodeURIComponent(invalidPage));
@@ -221,7 +301,8 @@ assert.equal(activePage(overflowPageHtml), Math.max(...renderedPages), '超出�
 [
   '#/detail',
   '#/detail/UNKNOWN-ALERT',
-  '#/detail/%E0%A4%A'
+  '#/detail/%E0%A4%A',
+  '#/detail/' + encodeURIComponent(leadAlert.id) + '/extra'
 ].forEach((route) => assertErrorState(renderHash(route), route));
 
 const refreshIntervals = intervals.filter((interval) => interval.delay === 10000);

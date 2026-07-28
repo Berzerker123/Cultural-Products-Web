@@ -21,6 +21,7 @@
     detailRules: {},
     lastAlertsHash: "#/alerts",
     lastUpdated: new Date(),
+    refreshVersion: 0,
   };
 
   var platformMeta = {
@@ -58,6 +59,62 @@
     bilibili: { label: "B站", className: "platform-bilibili", mark: "B" },
   };
 
+  function isIsoDate(value) {
+    if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value))
+      return false;
+    var parts = value.split("-").map(Number);
+    var date = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+    return (
+      date.getUTCFullYear() === parts[0] &&
+      date.getUTCMonth() === parts[1] - 1 &&
+      date.getUTCDate() === parts[2]
+    );
+  }
+
+  function normalizeDateFilter(value, fallback) {
+    if (value === "") return "";
+    return isIsoDate(value) ? value : fallback;
+  }
+
+  function normalizeChoice(value, choices, fallback) {
+    return choices.indexOf(value) > -1 ? value : fallback;
+  }
+
+  function normalizeFilters(values) {
+    var input = values || {};
+    var categories = (data && data.categories) || [];
+    var statusCounts = (data && data.statusCounts) || {};
+    return {
+      search: String(input.search == null ? "" : input.search).trim().slice(0, 120),
+      platform: normalizeChoice(
+        input.platform,
+        ["all"].concat(Object.keys(platformMeta)),
+        DEFAULT_FILTERS.platform,
+      ),
+      risk: normalizeChoice(
+        input.risk,
+        ["all"].concat(
+          categories.map(function (item) {
+            return item.key;
+          }),
+        ),
+        DEFAULT_FILTERS.risk,
+      ),
+      status: normalizeChoice(
+        input.status,
+        ["all"].concat(Object.keys(statusCounts)),
+        DEFAULT_FILTERS.status,
+      ),
+      sort: normalizeChoice(
+        input.sort,
+        ["newest", "oldest", "confidence"],
+        DEFAULT_FILTERS.sort,
+      ),
+      startDate: normalizeDateFilter(input.startDate, DEFAULT_FILTERS.startDate),
+      endDate: normalizeDateFilter(input.endDate, DEFAULT_FILTERS.endDate),
+    };
+  }
+
   function escapeHtml(value) {
     return String(value == null ? "" : value)
       .replace(/&/g, "&amp;")
@@ -65,6 +122,13 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#039;");
+  }
+
+  function assetUrl(path) {
+    var value = String(path == null ? "" : path);
+    return /^assets\/case-\d+\.png$/.test(value)
+      ? value + "?v=20260728"
+      : value;
   }
 
   function formatNumber(value) {
@@ -132,18 +196,30 @@
   }
 
   function parseRoute() {
-    var raw = location.hash.replace(/^#\/?/, "") || "overview";
-    var parts = raw.split("?");
-    var path = parts[0];
-    var query = new URLSearchParams(parts[1] || "");
+    var hash = typeof location.hash === "string" ? location.hash : "";
+    var raw = hash.replace(/^#\/?/, "") || "overview";
+    var queryIndex = raw.indexOf("?");
+    var path = queryIndex === -1 ? raw : raw.slice(0, queryIndex);
+    var query = new URLSearchParams(
+      queryIndex === -1 ? "" : raw.slice(queryIndex + 1),
+    );
+    if (path === "detail" || path === "detail/")
+      return { name: "not-found", reason: "missing-detail-id", query: query };
     if (path.indexOf("detail/") === 0) {
       var encodedId = path.slice(7);
-      if (!encodedId)
-        return { name: "not-found", reason: "missing-detail-id", query: query };
+      if (!encodedId || encodedId.indexOf("/") > -1)
+        return { name: "not-found", reason: "invalid-detail-id", query: query };
       try {
+        var id = decodeURIComponent(encodedId);
+        if (!id || id.indexOf("/") > -1)
+          return {
+            name: "not-found",
+            reason: "invalid-detail-id",
+            query: query,
+          };
         return {
           name: "detail",
-          id: decodeURIComponent(encodedId),
+          id: id,
           query: query,
         };
       } catch (error) {
@@ -161,10 +237,11 @@
   }
 
   function setAlertsHash(changes) {
-    var values = Object.assign({}, state.filters, changes || {});
+    var values = normalizeFilters(Object.assign({}, state.filters, changes || {}));
     var params = new URLSearchParams();
     Object.keys(DEFAULT_FILTERS).forEach(function (key) {
-      if (values[key] && values[key] !== "all" && values[key] !== "newest")
+      if (key === "startDate" || key === "endDate") params.set(key, values[key]);
+      else if (values[key] && values[key] !== "all" && values[key] !== "newest")
         params.set(key, values[key]);
     });
     var requestedPage =
@@ -176,24 +253,35 @@
         ? Math.floor(requestedPage)
         : 1;
     params.set("page", String(safePage));
-    location.hash = "#/alerts?" + params.toString();
+    state.filters = values;
+    state.page = safePage;
+    state.lastAlertsHash = "#/alerts?" + params.toString();
+    if (location.hash === state.lastAlertsHash) render();
+    else location.hash = state.lastAlertsHash;
   }
 
   function syncStateFromRoute(route) {
     if (route.name !== "alerts") return;
     var q = route.query;
-    state.filters.search = q.get("search") || DEFAULT_FILTERS.search;
-    state.filters.platform = q.get("platform") || DEFAULT_FILTERS.platform;
-    state.filters.risk = q.get("risk") || DEFAULT_FILTERS.risk;
-    state.filters.status = q.get("status") || DEFAULT_FILTERS.status;
-    state.filters.sort = q.get("sort") || DEFAULT_FILTERS.sort;
-    state.filters.startDate = q.get("startDate") || DEFAULT_FILTERS.startDate;
-    state.filters.endDate = q.get("endDate") || DEFAULT_FILTERS.endDate;
+    state.filters = normalizeFilters({
+      search: q.has("search") ? q.get("search") : DEFAULT_FILTERS.search,
+      platform: q.has("platform")
+        ? q.get("platform")
+        : DEFAULT_FILTERS.platform,
+      risk: q.has("risk") ? q.get("risk") : DEFAULT_FILTERS.risk,
+      status: q.has("status") ? q.get("status") : DEFAULT_FILTERS.status,
+      sort: q.has("sort") ? q.get("sort") : DEFAULT_FILTERS.sort,
+      startDate: q.has("startDate")
+        ? q.get("startDate")
+        : DEFAULT_FILTERS.startDate,
+      endDate: q.has("endDate") ? q.get("endDate") : DEFAULT_FILTERS.endDate,
+    });
     var requestedPage = Number(q.get("page") || 1);
     state.page =
       Number.isFinite(requestedPage) && requestedPage > 0
         ? Math.floor(requestedPage)
         : 1;
+    state.lastAlertsHash = location.hash || "#/alerts";
   }
 
   function updateClock() {
@@ -258,7 +346,15 @@
   }
 
   function renderOverview() {
-    var totals = data.totals;
+    var totals = data.totals || {};
+    var summary = data.alertSummary || {};
+    var pendingSummary = summary.pending || {};
+    var discoveredSummary = summary.newlyDiscovered || {};
+    var reviewSummary = summary.manualReview || {};
+    var handledValue =
+      data.statusCounts && data.statusCounts["已处置"] != null
+        ? data.statusCounts["已处置"]
+        : totals.handled;
     var categoryStops = [];
     var cursor = 0;
     data.categories.forEach(function (item) {
@@ -267,7 +363,14 @@
       );
       cursor += item.percent;
     });
-    var latest = data.latestWarnings || data.alerts.slice(0, 5);
+    var latest = data.alerts
+      .filter(function (item) {
+        return item.level === "高危";
+      })
+      .sort(function (a, b) {
+        return b.time.localeCompare(a.time);
+      })
+      .slice(0, 5);
     var accountRows = data.accounts
       .map(function (item) {
         return (
@@ -294,7 +397,7 @@
           escapeHtml(item.id) +
           '">' +
           '<img class="latest-thumbnail" src="' +
-          escapeHtml(item.image) +
+          escapeHtml(assetUrl(item.image)) +
           '" alt="" loading="lazy"><span class="latest-copy"><strong>' +
           escapeHtml(item.title) +
           "</strong></span>" +
@@ -394,27 +497,44 @@
         note: "较昨日",
         trend: "18.6%",
       }),
-      metricCard("triangle-alert", "高危预警", totals.highRisk, {
+      metricCard(
+        "triangle-alert",
+        pendingSummary.label || "待处置预警",
+        pendingSummary.value != null ? pendingSummary.value : totals.pending,
+        {
         note: "较昨日",
-        trend: "15.3%",
+        trend: pendingSummary.trend || "15.3%",
         tone: "metric-danger",
         trendTone: "danger",
-      }),
-      metricCard("bell", "新增预警", totals.newAlerts, {
-        note: "较昨日",
-        trend: "23.4%",
-        tone: "metric-warning",
-      }),
-      metricCard("shield-check", "已处置预警", totals.handled, {
+        },
+      ),
+      metricCard(
+        "bell",
+        discoveredSummary.label || "24小时内新发现",
+        discoveredSummary.value != null
+          ? discoveredSummary.value
+          : totals.newAlerts,
+        {
+          note: "较昨日",
+          trend: discoveredSummary.trend || "18.9%",
+          tone: "metric-warning",
+        },
+      ),
+      metricCard("shield-check", "已处置预警", handledValue, {
         note: "较昨日",
         trend: "22.7%",
         tone: "metric-success",
       }),
-      metricCard("user-pen", "人工处置预警", totals.manual, {
+      metricCard(
+        "user-pen",
+        reviewSummary.label || "待人工审核",
+        reviewSummary.value != null ? reviewSummary.value : totals.manualReview,
+        {
         note: "较昨日",
-        trend: "9.1%",
+        trend: reviewSummary.trend || "9.1%",
         tone: "metric-orange",
-      }),
+        },
+      ),
       "</div></section>",
       '<section class="panel distribution-panel"><div class="panel-heading"><div><span class="eyebrow">RISK DOMAIN</span><h2>失范领域分布图</h2></div><button class="icon-button" type="button" data-action="show-refresh" aria-label="刷新分布图">',
       icon("refresh-cw", 18),
@@ -423,7 +543,7 @@
       categoryStops.join(","),
       ')"><div><strong>总数</strong><b>',
       formatNumber(data.totalAlerts),
-      '</b><small>今日预警</small></div></div><div class="distribution-legend">',
+      '</b><small>监测窗口预警</small></div></div><div class="distribution-legend">',
       data.categories
         .map(function (item) {
           return (
@@ -454,7 +574,7 @@
       '</button></div><div class="warning-type-grid">',
       warningTypes,
       "</div></section></div>",
-      '<div class="overview-right"><section class="panel top-risks-panel"><div class="panel-heading"><div><span class="eyebrow">NEW ALERTS</span><h2>今日新增预警</h2></div><button class="text-button" type="button" data-action="go-alerts">更多 ',
+      '<div class="overview-right"><section class="panel top-risks-panel"><div class="panel-heading"><div><span class="eyebrow">TOP RISK TYPES</span><h2>高发失范类别</h2></div><button class="text-button" type="button" data-action="go-alerts">更多 ',
       icon("chevron-right", 15),
       '</button></div><h3>TOP3 失范类别</h3><div class="top-risk-grid">',
       topRisks,
@@ -474,7 +594,8 @@
   }
 
   function filterAlerts() {
-    var f = state.filters;
+    var f = normalizeFilters(state.filters);
+    state.filters = f;
     var list = data.alerts.filter(function (item) {
       var needle = f.search.trim().toLowerCase();
       var itemDate = item.time.slice(0, 10);
@@ -589,7 +710,7 @@
             "<small>" +
             escapeHtml(item.categoryLabel) +
             '</small></div></td><td><div class="work-cell"><img src="' +
-            escapeHtml(item.image) +
+            escapeHtml(assetUrl(item.image)) +
             '" alt="' +
             escapeHtml(item.title) +
             '"><div><strong>' +
@@ -784,9 +905,9 @@
       statusTabs +
       "</div>" +
       tableMarkup +
-      '<div class="table-footer"><span>共 <b>' +
+      '<div class="table-footer"><span>全量统计 <b>' +
       formatNumber(data.totalAlerts) +
-      "</b> 条记录 · 当前展示 " +
+      "</b> 条 · 当前筛选展示 " +
       list.length +
       ' 条示例数据</span><div class="pagination"><button type="button" class="page-number" data-action="page" data-page="prev" aria-label="上一页">' +
       icon("chevron-left", 16) +
@@ -802,72 +923,112 @@
     );
   }
 
+  function findDetailProfile(id) {
+    var profiles = data.caseDetails || data.detailProfiles;
+    var profile = null;
+    if (Array.isArray(profiles)) {
+      profile = profiles.find(function (entry) {
+        return entry && entry.id === id;
+      });
+    } else if (profiles && typeof profiles === "object") {
+      profile = profiles[id];
+    }
+    if (!profile && data.detail && data.detail.id === id) profile = data.detail;
+    return profile && typeof profile === "object" ? profile : {};
+  }
+
+  function formatConfidence(value) {
+    var numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric.toFixed(1) + "%";
+    var text = String(value == null ? "" : value);
+    return /%$/.test(text) ? text : text + "%";
+  }
+
   function getDetail(id) {
     var item = data.alerts.find(function (entry) {
       return entry.id === id;
     });
     if (!item) return null;
-    if (id === data.detail.id) {
-      var saved = state.draft[id] || {};
-      return Object.assign({}, data.detail, {
-        id: item.id,
-        categoryCode: item.categoryCode,
-        category: item.category,
-        categoryLabel: item.categoryLabel,
-        confidence: item.confidence.toFixed(1) + "%",
-        type: item.status === "已处置" ? "已完成处置" : "待人工研判",
-        time: item.time,
-        platformKey: item.platformKey,
-        platform: item.platform,
-        image: item.image,
-        title: item.title,
-        sourceItem: item,
-        account: item.account.replace(/^@/, ""),
-        accountId: item.accountId,
-        fans: item.followers,
-        likes: item.spread[0] ? item.spread[0][1] : "—",
-        spread: item.spread,
-        spreadGrowth: item.spreadGrowth,
-        rules: state.detailRules[id] || data.detail.rules,
-        judgment: saved.judgment || "确认失范",
-        opinion: saved.opinion || "",
-      });
-    }
-    return {
+
+    var profile = findDetailProfile(id);
+    var saved = state.draft[id] || {};
+    var defaultRules = [item.categoryLabel || item.category, item.risk].filter(
+      function (value, index, values) {
+        return value && values.indexOf(value) === index;
+      },
+    );
+    var defaults = {
+      originalText: item.title + "\n\n" + item.summary,
+      conclusion: item.summary,
+      logicSummary: item.summary,
+      judgments: [
+        { label: item.category, tone: "danger", icon: "shield-alert" },
+        { label: item.risk, tone: "warning", icon: "circle-alert" },
+      ],
+      evidence: [
+        ["标题与内容摘要出现“" + item.category + "”相关风险特征", "标题/正文"],
+        ["传播数据达到预警监测阈值，存在继续扩散的可能", "传播数据"],
+        ["建议结合完整上下文与平台规则进行人工复核", "研判建议"],
+      ],
+      rules: defaultRules,
+      similar: [],
+    };
+    var detail = Object.assign({}, defaults, profile, {
       id: item.id,
       categoryCode: item.categoryCode,
       category: item.category,
       categoryLabel: item.categoryLabel,
-      confidence: item.confidence.toFixed(1) + "%",
-      type: item.status === "已处置" ? "已完成处置" : "待人工研判",
+      risk: item.risk,
+      riskKey: item.riskKey,
+      level: item.level,
+      confidence: formatConfidence(item.confidence),
+      status: item.status,
+      suggestion: item.suggestion,
       time: item.time,
       platformKey: item.platformKey,
       platform: item.platform,
       image: item.image,
       title: item.title,
-      sourceItem: item,
-      originalText: item.title + "\n\n" + item.summary,
-      account: item.account.replace("@", ""),
+      summary: item.summary,
+      media: item.media,
+      account: item.account.replace(/^@/, ""),
       accountId: item.accountId,
       fans: item.followers,
       likes: item.spread[0] ? item.spread[0][1] : "—",
-      conclusion: item.summary,
-      judgments: [
-        { label: item.risk, tone: "danger", icon: "shield-alert" },
-        { label: "不良价值导向", tone: "warning", icon: "circle-alert" },
-      ],
-      evidence: [
-        ["识别到与" + item.risk + "相关的高风险表述", "00:02"],
-        ["传播范围较广，存在扩散风险", "00:05"],
-        ["建议结合人工复核确认处置等级", "00:08"],
-      ],
-      rules: state.detailRules[id] || [item.risk, "不良价值导向"],
-      similar: data.detail.similar,
-      spread: item.spread,
-      spreadGrowth: item.spreadGrowth,
-      judgment: (state.draft[id] || {}).judgment || "确认失范",
-      opinion: (state.draft[id] || {}).opinion || "",
-    };
+      primaryMetricLabel: item.spread[0] ? item.spread[0][0] : "传播量",
+      primaryMetricValue: item.spread[0] ? item.spread[0][1] : "—",
+      spread: Array.isArray(item.spread) ? item.spread : [],
+      spreadGrowth: Array.isArray(item.spreadGrowth) ? item.spreadGrowth : [],
+      sourceItem: item,
+      judgment: saved.judgment || "确认失范",
+      opinion: saved.opinion || "",
+    });
+
+    detail.originalText = detail.originalText || detail.copy || defaults.originalText;
+    detail.conclusion = detail.conclusion || detail.analysis || defaults.conclusion;
+    detail.logicSummary =
+      profile.logicSummary ||
+      profile.logic ||
+      profile.analysisSummary ||
+      detail.logicSummary ||
+      detail.conclusion;
+    detail.judgments =
+      Array.isArray(detail.judgments) && detail.judgments.length
+        ? detail.judgments
+        : defaults.judgments;
+    detail.evidence =
+      Array.isArray(detail.evidence) && detail.evidence.length
+        ? detail.evidence
+        : Array.isArray(detail.keyEvidence) && detail.keyEvidence.length
+          ? detail.keyEvidence
+          : defaults.evidence;
+    detail.rules =
+      state.detailRules[id] ||
+      (Array.isArray(detail.rules) && detail.rules.length
+        ? detail.rules.slice()
+        : defaults.rules.slice());
+    detail.similar = Array.isArray(detail.similar) ? detail.similar : [];
+    return detail;
   }
 
   function renderRouteError(route) {
@@ -918,27 +1079,150 @@
       .join("");
   }
 
+  function findAlertById(id) {
+    return data.alerts.find(function (entry) {
+      return entry.id === id;
+    });
+  }
+
+  function similarityText(value, index) {
+    var numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      if (numeric <= 1) numeric *= 100;
+      return numeric.toFixed(numeric % 1 ? 1 : 0) + "%";
+    }
+    if (typeof value === "string" && value) return /%$/.test(value) ? value : value + "%";
+    return String(Math.max(72, 92 - index * 4)) + "%";
+  }
+
+  function getSimilarAlerts(detail) {
+    var selected = [];
+    var usedIds = [detail.id];
+    var configuredSimilar = (detail.similar || []).slice();
+    (detail.relatedIds || []).forEach(function (id) {
+      configuredSimilar.push({ id: id });
+    });
+    configuredSimilar.forEach(function (entry, index) {
+      var configured = Array.isArray(entry)
+        ? { id: entry[4] || entry[0], similarity: entry[2] }
+        : entry || {};
+      var target = findAlertById(configured.id || configured.alertId);
+      if (!target || usedIds.indexOf(target.id) > -1) return;
+      usedIds.push(target.id);
+      selected.push({
+        item: target,
+        similarity: similarityText(configured.similarity || configured.score, index),
+      });
+    });
+
+    var candidates = data.alerts
+      .filter(function (entry) {
+        return usedIds.indexOf(entry.id) === -1;
+      })
+      .sort(function (left, right) {
+        var leftScore =
+          (left.categoryCode === detail.categoryCode ? 2 : 0) +
+          (left.riskKey === detail.riskKey ? 1 : 0);
+        var rightScore =
+          (right.categoryCode === detail.categoryCode ? 2 : 0) +
+          (right.riskKey === detail.riskKey ? 1 : 0);
+        if (rightScore !== leftScore) return rightScore - leftScore;
+        return right.time.localeCompare(left.time);
+      });
+    candidates.some(function (target) {
+      if (selected.length >= 4) return true;
+      selected.push({
+        item: target,
+        similarity: similarityText(null, selected.length),
+      });
+      return false;
+    });
+    return selected;
+  }
+
+  function formatLogTime(value, offsetSeconds) {
+    var match = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(value || "");
+    if (!match) return value || "—";
+    var stamp = Date.UTC(
+      Number(match[1]),
+      Number(match[2]) - 1,
+      Number(match[3]),
+      Number(match[4]),
+      Number(match[5]),
+      Number(match[6]),
+    );
+    var date = new Date(stamp + offsetSeconds * 1000);
+    function pad(number) {
+      return String(number).padStart(2, "0");
+    }
+    return [date.getUTCFullYear(), pad(date.getUTCMonth() + 1), pad(date.getUTCDate())].join("-") +
+      " " +
+      [pad(date.getUTCHours()), pad(date.getUTCMinutes()), pad(date.getUTCSeconds())].join(":");
+  }
+
+  function getDetailLogs(detail) {
+    return [
+      [
+        formatLogTime(detail.time, 80),
+        "创建研判记录",
+        "研判员（当前）",
+        "人工研判",
+        detail.status,
+        "来源：自动预警",
+      ],
+      [
+        formatLogTime(detail.time, 34),
+        "触发人工研判流程",
+        "系统",
+        "流程引擎",
+        "待研判",
+        "模型置信度：" + detail.confidence,
+      ],
+      [
+        formatLogTime(detail.time, 5),
+        "生成AI预警",
+        "系统",
+        "模型服务",
+        detail.level,
+        "内容标签：" + detail.categoryLabel,
+      ],
+      [
+        formatLogTime(detail.time, 0),
+        "获取平台数据",
+        "系统",
+        "数据引擎",
+        "成功",
+        "平台：" + detail.platform,
+      ],
+      [
+        formatLogTime(detail.time, -8),
+        "发现内容",
+        "系统",
+        "内容中心",
+        "已入库",
+        "匹配类别：" + detail.categoryLabel,
+      ],
+    ];
+  }
+
   function renderDetail(route) {
     var detail = getDetail(route.id);
     if (!detail) return renderMissingDetail(route.id);
     var item = detail.sourceItem;
-    var similarTargets = data.alerts.filter(function (entry) {
-      return entry.id !== detail.id;
-    });
-    var similar = (detail.similar || [])
-      .map(function (row, index) {
-        var target = similarTargets[index % similarTargets.length];
+    var similar = getSimilarAlerts(detail)
+      .map(function (row) {
+        var target = row.item;
         return (
           '<button class="similar-row" type="button" data-action="open-detail" data-id="' +
           escapeHtml(target.id) +
           '"><strong>' +
-          escapeHtml(row[0]) +
+          escapeHtml(target.title) +
           "</strong><span>平台：" +
-          escapeHtml(row[1]) +
+          escapeHtml(target.platform) +
           "</span><span>相似度：<b>" +
-          escapeHtml(row[2]) +
+          escapeHtml(row.similarity) +
           "</b></span><span>处置：" +
-          escapeHtml(row[3]) +
+          escapeHtml(target.suggestion) +
           "</span>" +
           icon("chevron-right", 17) +
           "</button>"
@@ -947,57 +1231,18 @@
       .join("");
     var evidence = (detail.evidence || [])
       .map(function (row) {
+        var text = Array.isArray(row) ? row[0] : row.text || row.label || row.content;
+        var marker = Array.isArray(row) ? row[1] : row.time || row.source || row.location;
         return (
           "<li><span>" +
-          escapeHtml(row[0]) +
+          escapeHtml(text) +
           "</span><time>" +
-          escapeHtml(row[1]) +
+          escapeHtml(marker) +
           "</time></li>"
         );
       })
       .join("");
-    var logs = [
-      [
-        "2025-06-02 10:28:34",
-        "创建记录",
-        "AI研判",
-        "研判员（当前）",
-        "待复核",
-        "来源：预警/复核",
-      ],
-      [
-        "2025-06-02 10:27:48",
-        "触发人工研判流程",
-        "AI研判",
-        "系统",
-        "待研判",
-        "置信度：" + detail.confidence,
-      ],
-      [
-        "2025-06-02 10:27:19",
-        "AI预警",
-        "系统",
-        "系统",
-        "高危",
-        "内容标签：" + detail.category,
-      ],
-      [
-        "2025-06-02 10:27:14",
-        "数据获取",
-        "数据引擎",
-        "系统",
-        "—",
-        "平台：" + detail.platform,
-      ],
-      [
-        "2025-06-02 10:27:06",
-        "发现内容",
-        "内容中心（自动入库）",
-        "—",
-        "—",
-        "规则ID：V2-07-03",
-      ],
-    ];
+    var logs = getDetailLogs(detail);
     var logRows = logs
       .map(function (row) {
         return (
@@ -1036,8 +1281,8 @@
       escapeHtml(detail.categoryLabel || detail.category) +
       "</b></span><span><small>模型置信度</small><b>" +
       escapeHtml(detail.confidence) +
-      '</b></span><span class="meta-warning"><small>违规类型</small><b>◇ ' +
-      escapeHtml(detail.type) +
+      '</b></span><span class="meta-warning"><small>处置状态</small><b>◇ ' +
+      escapeHtml(detail.status) +
       "</b></span><span><small>发布时间</small><b>" +
       escapeHtml(detail.time) +
       "</b></span><span><small>平台</small><b>" +
@@ -1046,13 +1291,21 @@
       icon("arrow-left", 16) +
       ' 返回列表</button><button class="button primary" type="button" data-action="export-report">' +
       icon("download", 16) +
-      ' 导出报告</button></div></div></div><div class="detail-grid"><div class="detail-left"><section class="panel original-panel"><div class="panel-heading"><h2>原始作品</h2><span class="source-pill">内容截图</span></div><div class="original-media"><img src="' +
-      escapeHtml(detail.image) +
-      '" alt="原始作品截图"></div><div class="transcript"><div class="subheading"><strong>原始文案 / 字幕摘要</strong><button class="icon-text-button" type="button" data-action="copy-text">' +
+      ' 导出报告</button></div></div></div><div class="detail-grid"><div class="detail-left"><section class="panel original-panel"><div class="panel-heading"><h2>原始作品</h2><span class="source-pill">' +
+      escapeHtml(detail.media || "内容截图") +
+      '</span></div><div class="original-media"><img src="' +
+      escapeHtml(assetUrl(detail.image)) +
+      '" alt="' +
+      escapeHtml(detail.imageAlt || detail.title + " 原始作品截图") +
+      '"></div><div class="transcript"><div class="subheading"><strong>作品标题</strong></div><p>' +
+      escapeHtml(detail.title) +
+      '</p><div class="subheading"><strong>案例简介</strong></div><p>' +
+      escapeHtml(detail.introduction || detail.summary) +
+      '</p><div class="subheading"><strong>原始文案 / 字幕摘要</strong><button class="icon-text-button" type="button" data-action="copy-text">' +
       icon("copy", 15) +
-      " 复制全部</button></div><p>" +
+      ' 复制全部</button></div><p class="original-copy">' +
       escapeHtml(detail.originalText).replace(/\n/g, "<br>") +
-      '</p></div></section><section class="panel account-detail-panel"><div class="panel-heading"><h2>账号信息</h2><span class="verified">已认证</span></div><div class="account-hero"><span class="large-avatar">' +
+      '</p></div></section><section class="panel account-detail-panel"><div class="panel-heading"><h2>账号信息</h2><span class="verified">监测中</span></div><div class="account-hero"><span class="large-avatar">' +
       escapeHtml((detail.account || "自").slice(0, 1)) +
       "</span><div><strong>" +
       escapeHtml(detail.account) +
@@ -1060,9 +1313,15 @@
       escapeHtml(detail.accountId) +
       '</small></div></div><div class="account-metrics"><span><small>粉丝数</small><b>' +
       escapeHtml(detail.fans) +
-      "</b></span><span><small>获赞阅读</small><b>" +
-      escapeHtml(detail.likes) +
-      '</b></span><span><small>安全认证</small><b class="green-text">已认证</b></span><span><small>近30日趋势</small><b class="sparkline">▂▃▅▆▇▇▇</b></span></div></section><section class="panel spread-detail-panel"><div class="panel-heading"><h2>传播数据</h2><span>截至 ' +
+      "</b></span><span><small>" +
+      escapeHtml(detail.primaryMetricLabel) +
+      "</small><b>" +
+      escapeHtml(detail.primaryMetricValue) +
+      '</b></span><span><small>处置状态</small><b>' +
+      escapeHtml(detail.status) +
+      '</b></span><span><small>预警等级</small><b>' +
+      escapeHtml(detail.level) +
+      '</b></span></div></section><section class="panel spread-detail-panel"><div class="panel-heading"><h2>传播数据</h2><span>截至 ' +
       formatRefreshTime() +
       '</span></div><div class="spread-detail-grid">' +
       spreadMarkup +
@@ -1073,13 +1332,17 @@
       '</b></div><div class="subsection"><h3>关键模型判断</h3><div class="judgment-grid">' +
       detail.judgments
         .map(function (j) {
+          var judgment =
+            typeof j === "string"
+              ? { label: j, tone: "warning", icon: "circle-alert" }
+              : j || {};
           return (
             '<div class="judgment-chip ' +
-            j.tone +
+            escapeHtml(judgment.tone || "warning") +
             '">' +
-            icon(j.icon, 22) +
+            icon(judgment.icon || "circle-alert", 22) +
             "<strong>" +
-            escapeHtml(j.label) +
+            escapeHtml(judgment.label) +
             "</strong></div>"
           );
         })
@@ -1088,11 +1351,22 @@
       evidence +
       '</ul></div><div class="subsection logic-section"><h3>逻辑摘要</h3><div class="logic-copy">' +
       icon("file-text", 24) +
-      '<p>以反传统价值观的表达方式传播错误认知，具有较强的社会认知误导性和价值导向风险。</p></div></div></section><section class="panel similar-panel"><div class="panel-heading"><h2>相似案例</h2><span>按相似度排序</span></div><div class="similar-list">' +
+      '<p>' +
+      escapeHtml(detail.logicSummary) +
+      '</p></div></div></section><section class="panel similar-panel"><div class="panel-heading"><h2>相似案例</h2><span>按相似度排序</span></div><div class="similar-list">' +
       similar +
       '</div></section></div><div class="detail-right"><section class="panel disposition-panel"><div class="panel-heading"><div><span class="eyebrow">HUMAN REVIEW</span><h2>研判与处置</h2></div><span class="required-label">* 必填项</span></div><div class="recommendation-box"><span>' +
       icon("triangle-alert", 28) +
-      '</span><strong>责令修正</strong><small>应停止错误认知引导内容</small></div><form id="judgment-form"><fieldset><legend>研判结论 <i>*</i></legend><div class="radio-row"><label><input type="radio" name="judgment" value="确认失范" ' +
+      '</span><strong>' +
+      escapeHtml(detail.suggestion) +
+      '</strong><small>' +
+      escapeHtml(
+        detail.recommendationReason ||
+          (detail.recommendation && detail.recommendation.note) ||
+          detail.dispositionNote ||
+          "建议依据对应失范类别与平台规则执行处置",
+      ) +
+      '</small></div><form id="judgment-form"><fieldset><legend>研判结论 <i>*</i></legend><div class="radio-row"><label><input type="radio" name="judgment" value="确认失范" ' +
       (detail.judgment === "确认失范" ? "checked" : "") +
       '><span>确认失范</span></label><label><input type="radio" name="judgment" value="部分失范" ' +
       (detail.judgment === "部分失范" ? "checked" : "") +
@@ -1124,11 +1398,31 @@
     );
   }
 
+  function captureDetailDraft(id) {
+    var form = document.getElementById("judgment-form");
+    if (!form || typeof form.querySelector !== "function") return;
+    var opinionField = form.querySelector('textarea[name="opinion"]');
+    var judgmentField = form.querySelector('input[name="judgment"]:checked');
+    if (!opinionField && !judgmentField) return;
+    var current = state.draft[id] || {};
+    state.draft[id] = {
+      judgment: judgmentField ? judgmentField.value : current.judgment,
+      opinion: opinionField ? opinionField.value : current.opinion || "",
+    };
+  }
+
   function refreshData(manual) {
-    data = window.APP_DATA;
-    state.lastUpdated = new Date();
     var route = parseRoute();
-    if (route.name === "overview" || route.name === "alerts") render();
+    if (route.name === "detail") captureDetailDraft(route.id);
+    var latestData = window.APP_DATA;
+    if (!latestData || !Array.isArray(latestData.alerts)) {
+      if (manual) showToast("数据刷新失败，请稍后重试", "error");
+      return;
+    }
+    data = latestData;
+    state.lastUpdated = new Date();
+    state.refreshVersion += 1;
+    render();
     if (manual) showToast("数据已刷新，更新时间 " + formatRefreshTime());
   }
 
@@ -1166,7 +1460,7 @@
   }
 
   function copyText() {
-    var text = document.querySelector(".transcript p");
+    var text = document.querySelector(".transcript .original-copy");
     if (!text) return;
     var value = text.innerText;
     if (navigator.clipboard && navigator.clipboard.writeText)
@@ -1222,6 +1516,10 @@
   function submitJudgment(event) {
     event.preventDefault();
     var route = parseRoute();
+    if (route.name !== "detail" || !getDetail(route.id)) {
+      showToast("当前预警不存在，无法提交复核", "error");
+      return;
+    }
     var form = document.getElementById("judgment-form");
     var opinion = (form.querySelector("textarea") || {}).value || "";
     var judgment =
@@ -1251,16 +1549,22 @@
     var form = document.getElementById("filter-form");
     if (!form) return;
     var formData = new FormData(form);
-    var nextFilters = {
+    var startDate = formData.get("startDate");
+    var endDate = formData.get("endDate");
+    var nextFilters = normalizeFilters({
       search: formData.get("search") || DEFAULT_FILTERS.search,
       platform: formData.get("platform") || DEFAULT_FILTERS.platform,
       risk: formData.get("risk") || DEFAULT_FILTERS.risk,
       status: formData.get("status") || DEFAULT_FILTERS.status,
       sort: formData.get("sort") || DEFAULT_FILTERS.sort,
-      startDate: formData.get("startDate") || DEFAULT_FILTERS.startDate,
-      endDate: formData.get("endDate") || DEFAULT_FILTERS.endDate,
-    };
-    if (nextFilters.startDate > nextFilters.endDate) {
+      startDate: startDate == null ? DEFAULT_FILTERS.startDate : startDate,
+      endDate: endDate == null ? DEFAULT_FILTERS.endDate : endDate,
+    });
+    if (
+      nextFilters.startDate &&
+      nextFilters.endDate &&
+      nextFilters.startDate > nextFilters.endDate
+    ) {
       showToast("开始日期不能晚于结束日期", "error");
       return;
     }
@@ -1269,7 +1573,10 @@
   }
 
   document.addEventListener("click", function (event) {
-    var target = event.target.closest("[data-action]");
+    var target =
+      event.target && typeof event.target.closest === "function"
+        ? event.target.closest("[data-action]")
+        : null;
     if (!target) return;
     var action = target.getAttribute("data-action");
     if (action === "toggle-menu") state.menuOpen = !state.menuOpen;
@@ -1333,7 +1640,14 @@
       if (!currentRemoveDetail) return;
       var rules =
         state.detailRules[routeRemove.id] || currentRemoveDetail.rules.slice();
-      rules.splice(Number(target.getAttribute("data-index")), 1);
+      var ruleIndex = Number(target.getAttribute("data-index"));
+      if (
+        !Number.isInteger(ruleIndex) ||
+        ruleIndex < 0 ||
+        ruleIndex >= rules.length
+      )
+        return;
+      rules.splice(ruleIndex, 1);
       state.detailRules[routeRemove.id] = rules;
       render();
     } else if (action === "save-suggestion") showToast("已采纳系统处置建议");
@@ -1356,16 +1670,20 @@
     render();
   });
   try {
-    state.draft = JSON.parse(
+    var storedDraft = JSON.parse(
       localStorage.getItem("cultural-alert-draft") || "{}",
     );
+    state.draft =
+      storedDraft && typeof storedDraft === "object" && !Array.isArray(storedDraft)
+        ? storedDraft
+        : {};
   } catch (e) {
     state.draft = {};
   }
   updateClock();
   setInterval(updateClock, 1000);
   setInterval(function () {
-    refreshData(false);
+    if (document.visibilityState !== "hidden") refreshData(false);
   }, 10000);
   render();
 })();
