@@ -294,7 +294,7 @@
   function exportReport() {
     var route = parseRoute();
     var detail = getDetail(route.id);
-    var lines = ['文化产品价值失范作品综合预警平台', '预警编号：' + detail.id, '失范类别：' + detail.category, '模型置信度：' + detail.confidence, '发布时间：' + detail.time, '平台：' + detail.platform, '', '风险结论：' + detail.conclusion, '关联规则：' + (detail.rules || []).join('、'), '研判意见：' + (detail.opinion || '尚未提交')];
+    var lines = ['文化产品价值失范综合预警平台', '预警编号：' + detail.id, '失范类别：' + detail.category, '模型置信度：' + detail.confidence, '发布时间：' + detail.time, '平台：' + detail.platform, '', '风险结论：' + detail.conclusion, '关联规则：' + (detail.rules || []).join('、'), '研判意见：' + (detail.opinion || '尚未提交')];
     var blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
     var link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = detail.id + '-预警报告.txt'; link.click(); URL.revokeObjectURL(link.href); showToast('报告已导出');
   }
