@@ -503,7 +503,7 @@
         pendingSummary.value != null ? pendingSummary.value : totals.pending,
         {
         note: "较昨日",
-        trend: pendingSummary.trend || "15.3%",
+        trend: pendingSummary.trend || "2.3%",
         tone: "metric-danger",
         trendTone: "danger",
         },
@@ -516,13 +516,13 @@
           : totals.newAlerts,
         {
           note: "较昨日",
-          trend: discoveredSummary.trend || "18.9%",
+          trend: discoveredSummary.trend || "5.9%",
           tone: "metric-warning",
         },
       ),
       metricCard("shield-check", "已处置预警", handledValue, {
         note: "较昨日",
-        trend: "22.7%",
+        trend: "3.7%",
         tone: "metric-success",
       }),
       metricCard(
@@ -531,7 +531,7 @@
         reviewSummary.value != null ? reviewSummary.value : totals.manualReview,
         {
         note: "较昨日",
-        trend: reviewSummary.trend || "9.1%",
+        trend: reviewSummary.trend || "2.1%",
         tone: "metric-orange",
         },
       ),
