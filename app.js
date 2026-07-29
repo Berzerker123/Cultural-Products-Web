@@ -127,7 +127,7 @@
   function assetUrl(path) {
     var value = String(path == null ? "" : path);
     return /^assets\/case-\d+\.png$/.test(value)
-      ? value + "?v=20260728"
+      ? value + "?v=20260729"
       : value;
   }
 
