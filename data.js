@@ -503,10 +503,10 @@
   }, {});
 
   var alertSummary = {
-    pending: { label: '待处置预警', value: statusCounts['待处置'], trend: '15.3%', tone: 'danger' },
-    newlyDiscovered: { label: '24小时内新发现', value: 532, trend: '18.9%', tone: 'warning' },
-    completedToday: { label: '复核已通过', value: statusCounts['已通过'], trend: '18.4%', tone: 'success' },
-    manualReview: { label: '待人工审核', value: statusCounts['待人工审核'], trend: '9.1%', tone: 'info' }
+    pending: { label: '待处置预警', value: statusCounts['待处置'], trend: '5.3%', tone: 'danger' },
+    newlyDiscovered: { label: '24小时内新发现', value: 532, trend: '5.9%', tone: 'warning' },
+    completedToday: { label: '复核已通过', value: statusCounts['已通过'], trend: '5.4%', tone: 'success' },
+    manualReview: { label: '待人工审核', value: statusCounts['待人工审核'], trend: '3.1%', tone: 'info' }
   };
 
   window.APP_DATA = {

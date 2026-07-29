@@ -359,7 +359,7 @@
     var cursor = 0;
     data.categories.forEach(function (item) {
       categoryStops.push(
-        item.color + " " + cursor + " " + (cursor + item.percent) + "",
+        item.color + " " + cursor + "% " + (cursor + item.percent) + "%",
       );
       cursor += item.percent;
     });
@@ -491,11 +491,11 @@
       metricCard("file-text", "累计监测作品数量", totals.works),
       metricCard("user-pen", "今日累计监测作者数量", totals.todayAuthors, {
         note: "较昨日",
-        trend: "2.7",
+        trend: "12.7%",
       }),
       metricCard("scan-search", "今日累计监测作品数量", totals.todayWorks, {
         note: "较昨日",
-        trend: "4.6%",
+        trend: "18.6%",
       }),
       metricCard(
         "triangle-alert",
@@ -503,7 +503,7 @@
         pendingSummary.value != null ? pendingSummary.value : totals.pending,
         {
         note: "较昨日",
-        trend: pendingSummary.trend || "1.3%",
+        trend: pendingSummary.trend || "15.3%",
         tone: "metric-danger",
         trendTone: "danger",
         },
@@ -516,13 +516,13 @@
           : totals.newAlerts,
         {
           note: "较昨日",
-          trend: discoveredSummary.trend || "3.9%",
+          trend: discoveredSummary.trend || "18.9%",
           tone: "metric-warning",
         },
       ),
       metricCard("shield-check", "已处置预警", handledValue, {
         note: "较昨日",
-        trend: "1.7%",
+        trend: "22.7%",
         tone: "metric-success",
       }),
       metricCard(
@@ -531,7 +531,7 @@
         reviewSummary.value != null ? reviewSummary.value : totals.manualReview,
         {
         note: "较昨日",
-        trend: reviewSummary.trend || "2.1%",
+        trend: reviewSummary.trend || "9.1%",
         tone: "metric-orange",
         },
       ),
