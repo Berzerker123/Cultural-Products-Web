@@ -359,7 +359,7 @@
     var cursor = 0;
     data.categories.forEach(function (item) {
       categoryStops.push(
-        item.color + " " + cursor + "% " + (cursor + item.percent) + "%",
+        item.color + " " + cursor + " " + (cursor + item.percent) + "",
       );
       cursor += item.percent;
     });
@@ -491,11 +491,11 @@
       metricCard("file-text", "累计监测作品数量", totals.works),
       metricCard("user-pen", "今日累计监测作者数量", totals.todayAuthors, {
         note: "较昨日",
-        trend: "12.7%",
+        trend: "2.7",
       }),
       metricCard("scan-search", "今日累计监测作品数量", totals.todayWorks, {
         note: "较昨日",
-        trend: "18.6%",
+        trend: "4.6%",
       }),
       metricCard(
         "triangle-alert",
