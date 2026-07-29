@@ -503,7 +503,7 @@
         pendingSummary.value != null ? pendingSummary.value : totals.pending,
         {
         note: "较昨日",
-        trend: pendingSummary.trend || "2.3%",
+        trend: pendingSummary.trend || "5.3%",
         tone: "metric-danger",
         trendTone: "danger",
         },
@@ -522,7 +522,7 @@
       ),
       metricCard("shield-check", "已处置预警", handledValue, {
         note: "较昨日",
-        trend: "3.7%",
+        trend: "22.7%",
         tone: "metric-success",
       }),
       metricCard(
@@ -531,7 +531,7 @@
         reviewSummary.value != null ? reviewSummary.value : totals.manualReview,
         {
         note: "较昨日",
-        trend: reviewSummary.trend || "2.1%",
+        trend: reviewSummary.trend || "3.1%",
         tone: "metric-orange",
         },
       ),

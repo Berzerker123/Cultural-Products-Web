@@ -186,6 +186,16 @@ assert.equal(data.totals.newAlerts, data.alertSummary.newlyDiscovered.value, '�
 assert.equal(data.totals.handled, data.statusCounts['已处置'], '总览已处置口径与状态统计不一致');
 assert.equal(data.totals.manualReview, data.statusCounts['待人工审核'], '总览人工审核口径与状态统计不一致');
 assert.equal(data.alertSummary.completedToday.value, data.statusCounts['已通过'], '复核通过口径与状态统计不一致');
+assert.deepEqual(
+  [
+    data.alertSummary.pending.trend,
+    data.alertSummary.newlyDiscovered.trend,
+    data.alertSummary.completedToday.trend,
+    data.alertSummary.manualReview.trend
+  ],
+  ['5.3%', '5.9%', '5.4%', '3.1%'],
+  '实时预警卡片增幅未使用约定的展示数值'
+);
 
 assert.deepEqual(Object.keys(data.caseDetails).sort(), Array.from(alertById.keys()).sort(), '案例详情必须与列表 ID 一一对应');
 Object.entries(data.caseDetails).forEach(([id, detail]) => {
@@ -231,6 +241,11 @@ checks.forEach(([hash, expected]) => {
     assert.ok(html.includes(text), `${hash} 缺少关键内容：${text}`);
   });
   assert.ok(html.length >= 1000, `${hash} 渲染内容异常短`);
+});
+
+const alertTrendHtml = renderHash('#/alerts');
+['5.3%', '5.9%', '5.4%', '3.1%'].forEach((value) => {
+  assert.ok(alertTrendHtml.includes(value), `实时预警页未渲染增幅：${value}`);
 });
 
 Array.from(data.alerts).forEach((alert) => {
